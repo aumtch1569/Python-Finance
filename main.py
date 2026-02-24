@@ -29,6 +29,19 @@ FONT_BODY   = ("Helvetica Neue", 12)
 FONT_SMALL  = ("Helvetica Neue", 11)
 FONT_MONO   = ("Courier New", 12)
 
+# ─── Compound Modes ────────────────────────────────────────────────────────────
+#  Label (shown in combobox)  →  (periods_per_year, label_unit, description)
+MODES = {
+    "ทบต้นรายวัน (Daily)":         (365,  "วัน",    "ทบดอกทุกวัน"),
+    "ทบต้นรายสัปดาห์ (Weekly)":    (52,   "สัปดาห์","ทบดอกทุกสัปดาห์"),
+    "ทบต้นรายเดือน (Monthly)":     (12,   "เดือน",  "ทบดอกทุกเดือน"),
+    "ทบต้นราย 2 เดือน (Bi-Monthly)":(6,   "งวด",    "ทบดอกทุก 2 เดือน"),
+    "ทบต้นรายไตรมาส (Quarterly)":  (4,    "ไตรมาส","ทบดอกทุก 3 เดือน"),
+    "ทบต้นรายครึ่งปี (Semi-Annual)":(2,   "ครึ่งปี","ทบดอกทุก 6 เดือน"),
+    "ทบต้นรายปี (Annual)":         (1,    "ปี",     "ทบดอกทุกปี"),
+    "ดอกเบี้ยธรรมดา (Simple)":     (0,    "งวด",    "ไม่ทบต้น คิดดอกจากเงินต้นตลอด"),
+}
+
 
 # ─────────────────────────────────────────────
 # Reusable Widget Helpers
@@ -72,8 +85,8 @@ class FinanceApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Finance Calculator Pro")
-        self.geometry("1100x660")
-        self.minsize(900, 560)
+        self.geometry("1150x700")
+        self.minsize(960, 580)
         self.configure(fg_color=COLORS["bg"])
 
         self._build_layout()
@@ -81,15 +94,13 @@ class FinanceApp(ctk.CTk):
 
     # ── Layout ───────────────────────────────
     def _build_layout(self):
-        # Header bar
         header = ctk.CTkFrame(self, fg_color=COLORS["panel"], height=56, corner_radius=0)
         header.pack(fill="x", side="top")
         ctk.CTkLabel(header, text="💹 Finance Calculator Pro",
                      font=FONT_TITLE, text_color=COLORS["text"]).pack(side="left", padx=20, pady=10)
-        ctk.CTkLabel(header, text="Compound Interest Analyzer",
+        ctk.CTkLabel(header, text="Compound & Simple Interest Analyzer",
                      font=FONT_SMALL, text_color=COLORS["subtext"]).pack(side="right", padx=20)
 
-        # Body
         body = ctk.CTkFrame(self, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=16, pady=12)
 
@@ -98,7 +109,7 @@ class FinanceApp(ctk.CTk):
 
     def _build_sidebar(self, parent):
         sidebar = ctk.CTkScrollableFrame(
-            parent, width=260,
+            parent, width=280,
             fg_color=COLORS["panel"], corner_radius=12,
             scrollbar_button_color=COLORS["border"],
             scrollbar_button_hover_color=COLORS["accent"],
@@ -106,7 +117,6 @@ class FinanceApp(ctk.CTk):
         sidebar.pack(side="left", fill="y", padx=(0, 10))
         sidebar._scrollbar.configure(width=6)
 
-        # Input Section
         input_section = ctk.CTkFrame(sidebar, fg_color="transparent")
         input_section.pack(fill="x", padx=12, pady=(16, 0))
 
@@ -118,28 +128,36 @@ class FinanceApp(ctk.CTk):
         self.entry_rate      = labeled_entry(input_section, "อัตราดอกเบี้ยต่อปี (%)", "เช่น 5.5")
         self.entry_period    = labeled_entry(input_section, "จำนวนงวด", "เช่น 12")
 
-        ctk.CTkLabel(input_section, text="รูปแบบการทบต้น",
+        # ── Mode selector ──
+        ctk.CTkLabel(input_section, text="รูปแบบการคิดดอกเบี้ย",
                      font=FONT_SMALL, text_color=COLORS["subtext"],
                      anchor="w").pack(fill="x", padx=4, pady=(10, 2))
+
         self.combo_mode = ctk.CTkComboBox(
             input_section,
-            values=["ทบต้นรายเดือน", "ทบต้นรายปี"],
+            values=list(MODES.keys()),
             font=FONT_BODY, height=38, corner_radius=8,
             border_width=1, border_color=COLORS["border"],
             fg_color=COLORS["card"], text_color=COLORS["text"],
             button_color=COLORS["border"], dropdown_fg_color=COLORS["card"],
+            command=self._on_mode_change,
         )
         self.combo_mode.pack(fill="x", padx=4, pady=(0, 2))
-        self.combo_mode.set("ทบต้นรายเดือน")
+        self.combo_mode.set("ทบต้นรายเดือน (Monthly)")
+
+        # Mode description badge
+        self.mode_desc_var = tk.StringVar(value="ทบดอกทุกเดือน")
+        ctk.CTkLabel(input_section, textvariable=self.mode_desc_var,
+                     font=("Helvetica Neue", 10), text_color=COLORS["accent2"],
+                     anchor="w").pack(fill="x", padx=6, pady=(2, 0))
 
         # Error label
         self.error_var = tk.StringVar(value="")
         self.error_label = ctk.CTkLabel(input_section, textvariable=self.error_var,
                                         font=FONT_SMALL, text_color=COLORS["danger"],
-                                        wraplength=220, justify="left")
+                                        wraplength=240, justify="left")
         self.error_label.pack(anchor="w", padx=4, pady=(6, 0))
 
-        # Calculate button
         ctk.CTkButton(
             input_section,
             text="คำนวณ",
@@ -173,19 +191,20 @@ class FinanceApp(ctk.CTk):
                      font=("Helvetica Neue", 10, "bold"),
                      text_color=COLORS["subtext"]).pack(anchor="w", pady=(0, 6))
 
-        self.var_principal = tk.StringVar(value="–")
-        self.var_interest  = tk.StringVar(value="–")
-        self.var_total     = tk.StringVar(value="–")
+        self.var_principal  = tk.StringVar(value="–")
+        self.var_interest   = tk.StringVar(value="–")
+        self.var_total      = tk.StringVar(value="–")
+        self.var_effective  = tk.StringVar(value="–")
 
-        stat_card(summary_section, "เงินต้น",         self.var_principal, COLORS["text"])
-        stat_card(summary_section, "ดอกเบี้ยรวม",     self.var_interest,  COLORS["accent2"])
-        stat_card(summary_section, "ยอดสุดท้าย",      self.var_total,     COLORS["accent"])
+        stat_card(summary_section, "เงินต้น",               self.var_principal, COLORS["text"])
+        stat_card(summary_section, "ดอกเบี้ยรวม",           self.var_interest,  COLORS["accent2"])
+        stat_card(summary_section, "ยอดสุดท้าย",            self.var_total,     COLORS["accent"])
+        stat_card(summary_section, "อัตราดอกเบี้ยแท้จริง (EAR)", self.var_effective, COLORS["danger"])
 
     def _build_main_panel(self, parent):
         panel = ctk.CTkFrame(parent, fg_color=COLORS["panel"], corner_radius=12)
         panel.pack(side="right", fill="both", expand=True)
 
-        # Table header row
         table_header = ctk.CTkFrame(panel, fg_color="transparent")
         table_header.pack(fill="x", padx=20, pady=(16, 8))
         ctk.CTkLabel(table_header, text="ตารางแสดงผลรายงวด",
@@ -194,7 +213,6 @@ class FinanceApp(ctk.CTk):
                                              font=FONT_SMALL, text_color=COLORS["subtext"])
         self.row_count_label.pack(side="right")
 
-        # Treeview container
         tree_frame = ctk.CTkFrame(panel, fg_color=COLORS["card"], corner_radius=8)
         tree_frame.pack(fill="both", expand=True, padx=16, pady=(0, 16))
 
@@ -214,7 +232,7 @@ class FinanceApp(ctk.CTk):
         scroll_x.config(command=self.tree.xview)
 
         col_config = [
-            ("งวด",              80,  "center"),
+            ("งวด",              90,  "center"),
             ("ยอดก่อนดอกเบี้ย", 200, "e"),
             ("ดอกเบี้ย",        160, "e"),
             ("ยอดสะสม",         200, "e"),
@@ -259,7 +277,11 @@ class FinanceApp(ctk.CTk):
                   foreground=[("selected", "#ffffff")])
         style.map("Finance.Treeview.Heading", background=[("active", COLORS["border"])])
 
-    # ── Actions ──────────────────────────────
+    # ── Event Handlers ───────────────────────
+    def _on_mode_change(self, mode_label: str):
+        _, _, desc = MODES[mode_label]
+        self.mode_desc_var.set(f"ℹ️  {desc}")
+
     def _on_calculate(self):
         self.error_var.set("")
         try:
@@ -274,21 +296,40 @@ class FinanceApp(ctk.CTk):
             self.error_var.set(f"⚠ กรุณากรอกข้อมูลให้ถูกต้อง\n{e}")
             return
 
-        self._run_calculation(principal, rate, period, self.combo_mode.get())
+        mode_label = self.combo_mode.get()
+        self._run_calculation(principal, rate, period, mode_label)
 
-    def _run_calculation(self, principal: float, rate: float, period: int, mode: str):
+    def _run_calculation(self, principal: float, rate: float, period: int, mode_label: str):
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        monthly_rate = rate / 12 if mode == "ทบต้นรายเดือน" else rate
-        balance = principal
+        n, unit_label, _ = MODES[mode_label]
+        is_simple = (n == 0)
+
+        # Period rate
+        if is_simple:
+            period_rate = rate / 12   # treat each period as 1 month (simple interest)
+            ear = rate                # EAR = nominal rate for simple
+        else:
+            period_rate = rate / n
+            # Effective Annual Rate
+            ear = (1 + period_rate) ** n - 1
+
+        balance       = principal
         total_interest = 0.0
 
         for i in range(1, period + 1):
-            before   = balance
-            interest = balance * monthly_rate
-            balance += interest
+            before = balance
+
+            if is_simple:
+                # Simple: interest always from original principal
+                interest = principal * period_rate
+            else:
+                interest = balance * period_rate
+
+            balance       += interest
             total_interest += interest
+
             tag = "even" if i % 2 == 0 else "odd"
             self.tree.insert("", "end", tags=(tag,), values=(
                 f"{i:,}",
@@ -302,10 +343,11 @@ class FinanceApp(ctk.CTk):
             "รวม", "–", f"{total_interest:,.2f}", f"{balance:,.2f}",
         ))
 
-        self.row_count_label.configure(text=f"{period:,} งวด")
+        self.row_count_label.configure(text=f"{period:,} {unit_label}")
         self.var_principal.set(f"{principal:,.2f} ฿")
         self.var_interest.set(f"{total_interest:,.2f} ฿")
         self.var_total.set(f"{balance:,.2f} ฿")
+        self.var_effective.set(f"{ear*100:.4f} %")
 
     def _clear(self):
         for entry in (self.entry_principal, self.entry_rate, self.entry_period):
@@ -317,6 +359,8 @@ class FinanceApp(ctk.CTk):
         self.var_principal.set("–")
         self.var_interest.set("–")
         self.var_total.set("–")
+        self.var_effective.set("–")
+        self.mode_desc_var.set("")
 
 
 # ─────────────────────────────────────────────
