@@ -1,0 +1,72 @@
+pipeline {
+    agent any
+
+    environment {
+        // สร้าง Timestamp สำหรับ Backup
+        BACKUP_TIMESTAMP = sh(script: "date +'%Y%m%d_%H%M%S'", returnStdout: true).trim()
+        
+    }
+
+    stages {
+        stage('Backup Code') {
+            steps {
+                script {
+                    echo "Starting Backup to Folder: ${BACKUP_TIMESTAMP}"
+                    sh """
+                        mkdir -p /opt/TAX_backup/${BACKUP_TIMESTAMP}
+                        rsync -a --exclude='.git' --exclude='node_modules' ./ /opt/TAX_backup/${BACKUP_TIMESTAMP}/
+                    """
+                }
+            }
+        }
+
+        stage('Pull Code') {
+            steps {
+                cleanWs()
+                checkout scm
+                sh "ls -la"
+                echo "Code pulled and workspace cleaned."
+            }
+        }
+
+        stage('Build and Deploy Docker') {
+            steps {
+                script {
+                    def rawBranch = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'main'
+                    def branchName = rawBranch.replace('origin/', '') 
+                    echo "Building for branch: ${branchName}"
+
+                    // ดึงค่าจาก Secret Text มาผูกกับตัวแปร Environment
+                    // withCredentials([
+                    //     string(credentialsId: 'REDIS_HOST', variable: 'REDIS_HOST'),
+                    //     string(credentialsId: 'HOST_SONAR_SCANER_URL', variable: 'HOST_SONAR_SCANER_URL'),
+                    //     string(credentialsId: 'SONAR_TOKEN_API_QR', variable: 'SONAR_TOKEN_API_QR'),
+                    //     string(credentialsId: 'SONAR_PROJECT_KEY_API_QR', variable: 'SONAR_PROJECT_KEY_API_QR'),
+                    //     string(credentialsId: 'ZAP_HOST_API_URL', variable: 'ZAP_HOST_API_URL'),
+                    //     string(credentialsId: 'ZAP_API_KEY', variable: 'ZAP_API_KEY'),
+                    //     string(credentialsId: 'ZAP_HOST_TARGET_DEPLOY', variable: 'ZAP_HOST_TARGET_DEPLOY'),
+                    //     string(credentialsId: 'WEBHOOK_URL_HOST', variable: 'WEBHOOK_URL_HOST')
+                    // ]) 
+                    {
+                        sh """
+                            # ตอนนี้ envsubst จะมองเห็นตัวแปรที่ดึงมาจาก Credentials แล้ว
+                            # if [ -f "qr.template.env" ]; then
+                            #     envsubst < qr.template.env > .env
+                            # else
+                            #     echo "Warning: qr.template.env not found"
+                            # fi
+                            
+                            chmod +x deployment.sh
+                            ./deployment.sh "${branchName}" "${env.GIT_URL}" "${env.BACKUP_TIMESTAMP}"
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success { echo 'Deployment Successful!' }
+        failure { echo 'Deployment Failed. Please check the logs.' }
+    }
+}
