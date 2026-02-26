@@ -71,9 +71,11 @@ CTK_PATH=$(python -c 'import customtkinter, os; print(os.path.dirname(customtkin
 echo "  Path: $CTK_PATH"
 
 echo "▶ Running PyInstaller..."
+# cdrx/pyinstaller-windows ใช้ Wine + Windows Python
+# → --add-data ต้องใช้ ; (Windows style) ไม่ใช่ : (Linux style)
 pyinstaller --onedir --windowed --name main \
-  --add-data "${CTK_PATH}:customtkinter" \
-  --add-data ".:." \
+  --add-data "${CTK_PATH};customtkinter" \
+  --add-data ".;." \
   main.py
 
 [ -d dist/main ] || { echo "❌ Build failed: dist/main not found"; exit 1; }
