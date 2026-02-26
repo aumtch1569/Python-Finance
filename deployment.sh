@@ -17,16 +17,18 @@ build_exe() {
   echo "🔨 Building Windows EXE using Docker (cdrx)..."
   cd "$DEPLOY_DIR"
   
-  # เปลี่ยนมาใช้ cdrx/pyinstaller-windows ซึ่งเป็นตัวยอดนิยมและใช้งานได้แน่นอน
-  # และใช้เทคนิคลบเลขเวอร์ชันออกจาก requirements.txt หน้างานเพื่อป้องกัน Error
+  # เพิ่ม "cd /src" เข้าไปในคำสั่ง Docker
   docker run --rm -v "$(pwd):/src" cdrx/pyinstaller-windows \
-    "python -m pip install --upgrade pip && \
-     sed -i 's/==.*//' requirements.txt && \
-     pip install -r requirements.txt && \
+    "cd /src && \
+     python -m pip install --upgrade pip && \
+     if [ -f requirements.txt ]; then sed -i 's/==.*//' requirements.txt && pip install -r requirements.txt; fi && \
      pyinstaller --onefile --windowed main.py"
 
+  # เช็คไฟล์หลัง build เสร็จ
   if [ ! -f "dist/main.exe" ]; then
     echo "❌ Build failed: dist/main.exe not found"
+    # ลองลิสต์ไฟล์ดูว่ามันไปงอกที่ไหน
+    ls -R dist/ || echo "No dist folder found"
     exit 1
   fi
   echo "  ✓ Build completed successfully"
