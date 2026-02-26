@@ -14,12 +14,14 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 # 1. ข้ามการสร้าง venv ในเครื่อง Jenkins และใช้ Docker Build แทน
 build_exe() {
-  echo "🔨 Building Windows EXE using Docker (tobix)..."
+  echo "🔨 Building Windows EXE using Docker (cdrx)..."
   cd "$DEPLOY_DIR"
   
-  # ใช้ Docker ตัวเดียวจบ: ลง lib, เทส และ build
-  docker run --rm -v "$(pwd):/src" tobix/pyinstaller-windows \
-    "pip install --upgrade pip && \
+  # เปลี่ยนมาใช้ cdrx/pyinstaller-windows ซึ่งเป็นตัวยอดนิยมและใช้งานได้แน่นอน
+  # และใช้เทคนิคลบเลขเวอร์ชันออกจาก requirements.txt หน้างานเพื่อป้องกัน Error
+  docker run --rm -v "$(pwd):/src" cdrx/pyinstaller-windows \
+    "python -m pip install --upgrade pip && \
+     sed -i 's/==.*//' requirements.txt && \
      pip install -r requirements.txt && \
      pyinstaller --onefile --windowed main.py"
 
