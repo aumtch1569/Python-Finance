@@ -36,30 +36,11 @@ pipeline {
                     def branchName = rawBranch.replace('origin/', '') 
                     echo "Building for branch: ${branchName}"
 
-                    // ดึงค่าจาก Secret Text มาผูกกับตัวแปร Environment
-                    // withCredentials([
-                    //     string(credentialsId: 'REDIS_HOST', variable: 'REDIS_HOST'),
-                    //     string(credentialsId: 'HOST_SONAR_SCANER_URL', variable: 'HOST_SONAR_SCANER_URL'),
-                    //     string(credentialsId: 'SONAR_TOKEN_API_QR', variable: 'SONAR_TOKEN_API_QR'),
-                    //     string(credentialsId: 'SONAR_PROJECT_KEY_API_QR', variable: 'SONAR_PROJECT_KEY_API_QR'),
-                    //     string(credentialsId: 'ZAP_HOST_API_URL', variable: 'ZAP_HOST_API_URL'),
-                    //     string(credentialsId: 'ZAP_API_KEY', variable: 'ZAP_API_KEY'),
-                    //     string(credentialsId: 'ZAP_HOST_TARGET_DEPLOY', variable: 'ZAP_HOST_TARGET_DEPLOY'),
-                    //     string(credentialsId: 'WEBHOOK_URL_HOST', variable: 'WEBHOOK_URL_HOST')
-                    // ]) 
-                    {
-                        sh """
-                            # ตอนนี้ envsubst จะมองเห็นตัวแปรที่ดึงมาจาก Credentials แล้ว
-                            # if [ -f "qr.template.env" ]; then
-                            #     envsubst < qr.template.env > .env
-                            # else
-                            #     echo "Warning: qr.template.env not found"
-                            # fi
-                            
-                            chmod +x deployment.sh
-                            ./deployment.sh "${branchName}" "${env.GIT_URL}" "${env.BACKUP_TIMESTAMP}"
-                        """
-                    }
+                    // ลบหรือ Comment ปีกกาที่เคยครอบ withCredentials ออกให้หมด
+                    sh """
+                        chmod +x deployment.sh
+                        ./deployment.sh "${branchName}" "${env.GIT_URL}" "${env.BACKUP_TIMESTAMP}"
+                    """
                 }
             }
         }
