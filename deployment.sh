@@ -15,8 +15,6 @@ readonly MINIO_PASS="minioadmin"
 readonly MINIO_CONTAINER="minio_artifacts"
 readonly BUCKET_NAME="deployments"
 
-# ใช้ custom image แทน cdrx/pyinstaller-windows โดยตรง
-# เหตุผล: cdrx หยุด maintain → Python 3.7 + PyInstaller 3.x → ไม่มี --collect-all
 readonly BUILD_IMAGE="tax-pyinstaller-windows:latest"
 readonly BUILD_DOCKERFILE="Dockerfile.build"
 readonly PACKAGE_NAME="app_package.tar.gz"
@@ -45,22 +43,21 @@ error()   { echo "  ❌ $*" >&2; exit 1; }
 # ══════════════════════════════════════════════
 ensure_build_image() {
   section "BUILD IMAGE — $BUILD_IMAGE"
-
   [ -f "$BUILD_DOCKERFILE" ] || error "$BUILD_DOCKERFILE not found in workspace"
 
-  # build image ใหม่ถ้ายังไม่มี หรือถ้า Dockerfile เปลี่ยน
   if ! docker image inspect "$BUILD_IMAGE" &>/dev/null; then
     log "Image not found — building..."
     docker build -f "$BUILD_DOCKERFILE" -t "$BUILD_IMAGE" .
     success "Image built: $BUILD_IMAGE"
   else
-    log "Image already exists — skipping build"
-    log "  (ลบ image ด้วย 'docker rmi $BUILD_IMAGE' เพื่อ rebuild)"
+    log "Image already exists — skipping (rm '$BUILD_IMAGE' to rebuild)"
   fi
 }
 
 # ══════════════════════════════════════════════
-#  BUILD SCRIPT (เขียนแยกไฟล์ → ไม่มี multiline bash -c)
+#  BUILD SCRIPT
+#  เขียนแยกไฟล์ → ไม่มี multiline bash -c → ไม่มี syntax error
+#  ใช้ wine python แทน python ตรง เพราะ cdrx/pyinstaller-windows = Wine env
 # ══════════════════════════════════════════════
 write_build_script() {
   cat > /tmp/_build_inside.sh << 'BUILD_SCRIPT'
@@ -71,20 +68,20 @@ cd /src
 echo "▶ Installing system tools..."
 command -v tar &>/dev/null || (apt-get update -qq && apt-get install -y -qq tar)
 
-echo "▶ Upgrading pip..."
-python -m pip install --upgrade pip --quiet
+echo "▶ Upgrading pip (wine python)..."
+wine python -m pip install --upgrade pip --quiet
 
 if [ -f requirements.txt ]; then
   echo "▶ Installing dependencies (pinned)..."
-  if ! pip install -r requirements.txt --quiet 2>/dev/null; then
+  if ! wine python -m pip install -r requirements.txt --quiet 2>/dev/null; then
     echo "⚠ Pinned versions incompatible — retrying unpinned..."
     sed 's/[>=<!][^ ]*//' requirements.txt | grep -v '^\s*$' > /tmp/req_unpinned.txt
-    pip install -r /tmp/req_unpinned.txt --quiet
+    wine python -m pip install -r /tmp/req_unpinned.txt --quiet
   fi
 fi
 
 echo "▶ Locating customtkinter..."
-CTK_PATH=$(python -c 'import customtkinter, os; print(os.path.dirname(customtkinter.__file__))' | tr -d '\r\n')
+CTK_PATH=$(wine python -c 'import customtkinter, os; print(os.path.dirname(customtkinter.__file__))' | tr -d '\r\n')
 echo "  customtkinter: $CTK_PATH"
 
 echo "▶ Running PyInstaller..."
@@ -117,7 +114,6 @@ build_and_package() {
   local container_id
   container_id=$(docker run -d -it "$BUILD_IMAGE" bash)
   log "Container: $container_id"
-
   trap "docker rm -f '$container_id' &>/dev/null || true" EXIT
 
   write_build_script
