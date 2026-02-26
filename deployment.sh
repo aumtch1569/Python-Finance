@@ -1,36 +1,25 @@
 #!/bin/bash
 set -e
 
-###############################################################################
-#             UNIVERSAL PYTHON DEPLOYMENT (FULL PROJECT TAR)                  #
-###############################################################################
-
 ### CONFIG ###
 PROJECT_NAME="TAX"
 DEPLOY_DIR="${WORKSPACE:-$(pwd)}"
 MINIO_ALIAS="myminio"      
 BUCKET_NAME="deployments"   
 
-# 1. จัดการ Version
 GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
 TIMESTAMP=$(date +%Y%m%d-%H%M)
 VERSION="${GIT_TAG}-${TIMESTAMP}"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 Deploying $PROJECT_NAME (Full Project Tar)"
+echo "🚀 Deploying $PROJECT_NAME"
 echo "📌 Version        : $VERSION"
-echo "📌 Workspace      : $DEPLOY_DIR"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-###############################################################################
-#                          BUILD & PACKAGE PROCESS                            #
-###############################################################################
-
 build_and_package() {
-  echo "🔨 Building Windows Executable and Packaging Project..."
+  echo "🔨 Building Windows Application..."
   cd "$DEPLOY_DIR"
 
-  # สร้าง Container สำหรับ Build Windows
   local container_id=$(docker run -d -it cdrx/pyinstaller-windows bash)
 
   echo "▶ Copying source code to container..."
@@ -39,39 +28,47 @@ build_and_package() {
   echo "▶ Running Environment Setup & Build..."
   docker exec -t "${container_id}" bash -c "
     cd /src && \
+    
+    # 🔍 เช็คและติดตั้งเครื่องมือที่จำเป็น (ถ้าไม่มี)
+    if ! command -v tar &> /dev/null; then
+        apt-get update && apt-get install -y tar;
+    fi && \
+    
     python -m pip install --upgrade pip && \
     if [ -f requirements.txt ]; then 
         sed -i 's/==.*//' requirements.txt && \
         pip install -r requirements.txt; 
     fi && \
     
-    # 🔍 ดึง Path ของ customtkinter เพื่อรวม assets
+    # ดึง Path customtkinter เพื่อจัดการ Assets
     CTK_PATH=\$(python -c 'import customtkinter; import os; print(os.path.dirname(customtkinter.__file__))' 2>/dev/null | tr -d '\r\n') && \
     
-    # สั่ง Build .exe เข้าไปไว้ในตัวโปรเจกต์เลย
     pyinstaller --onedir --windowed --add-data \"\$CTK_PATH;customtkinter\" --add-data '.;.' main.py && \
     
-    # ย้ายไฟล์จาก dist/main มาไว้ที่ root ของ project เพื่อความง่ายในการรัน
-    cp -r dist/main/* . && \
+    # 📦 วิธีแก้ Tar Error: สร้างโฟลเดอร์แยกสำหรับเตรียมไฟล์บีบอัด
+    echo '📦 Preparing package folder...' && \
+    mkdir -p /tmp/package_root && \
     
-    # 📦 บีบอัดทุกอย่าง ยกเว้นโฟลเดอร์ที่ไม่จำเป็น
-    echo '📦 Creating Tar Archive (Excluding Junk)...' && \
-    tar -czf app_package.tar.gz \
-        --exclude='venv' \
-        --exclude='.git' \
-        --exclude='__pycache__' \
-        --exclude='build' \
-        --exclude='dist' \
-        --exclude='*.pyc' \
-        --exclude='.pytest_cache' \
-        .
+    # ก๊อปปี้ทุกอย่างยกเว้นสิ่งที่ไม้ต้องการไปที่โฟลเดอร์ชั่วคราว
+    cp -r . /tmp/package_root/ && \
+    cd /tmp/package_root && \
+    
+    # ย้ายไฟล์จาก dist/main มาไว้ที่ root เพื่อให้รันง่าย
+    if [ -d \"dist/main\" ]; then
+        cp -r dist/main/* .
+    fi && \
+    
+    # ลบโฟลเดอร์ที่ไม่จำเป็นทิ้งก่อนบีบอัด
+    rm -rf venv .git __pycache__ build dist *.spec && \
+    
+    echo '📦 Creating Tar Archive...' && \
+    tar -czf /src/app_package.tar.gz . 
   "
 
   # ดึงไฟล์ Tar กลับมาที่ Jenkins
   mkdir -p dist_final
   docker cp "${container_id}:/src/app_package.tar.gz" ./dist_final/app_package.tar.gz
 
-  # ลบคอนเทนเนอร์
   docker rm -f "${container_id}"
 
   if [ ! -f "dist_final/app_package.tar.gz" ]; then
@@ -80,10 +77,6 @@ build_and_package() {
   fi
   echo "  ✓ Project Packaged successfully"
 }
-
-###############################################################################
-#                          STORE TO MINIO                                     #
-###############################################################################
 
 upload_to_minio() {
   echo "📦 Checking MinIO Client (mc)..."
@@ -108,17 +101,12 @@ upload_to_minio() {
   cat <<EOF > latest.json
 {
   "version": "$VERSION",
-  "tag": "$GIT_TAG",
-  "timestamp": "$TIMESTAMP",
   "url": "/$BUCKET_NAME/$PROJECT_NAME/$VERSION/app_package.tar.gz",
   "filename": "app_package.tar.gz"
 }
 EOF
-
   mc cp latest.json "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME/latest.json"
   mc anonymous set public "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME"
-
-  echo "  ✓ Deployment completed!"
 }
 
 main() {
