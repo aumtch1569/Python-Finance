@@ -66,31 +66,27 @@ build_exe() {
 upload_to_minio() {
   echo "📦 Checking MinIO Client (mc)..."
 
-  # 1. ตรวจสอบว่ามี mc หรือยัง ถ้าไม่มีให้โหลดมาติดตั้งเอง
+  # 1. ตรวจสอบและติดตั้ง mc
   if ! command -v mc &> /dev/null; then
     echo "⚠️  mc not found. Starting automatic installation..."
-    
-    # ดาวน์โหลด mc binary (สำหรับ Linux 64-bit)
-    curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o "$HOME/bin/mc"
-    
-    # ให้สิทธิ์การรัน
+    mkdir -p "$HOME/bin"
+    curl -s https://dl.min.io/client/mc/release/linux-amd64/mc -o "$HOME/bin/mc"
     chmod +x "$HOME/bin/mc"
-    
-    # เพิ่ม path ชั่วคราวเพื่อให้เรียกใช้ได้ทันที
     export PATH="$PATH:$HOME/bin"
-    
     echo "  ✓ mc installed successfully at $HOME/bin/mc"
   else
     echo "  ✓ mc is already installed."
   fi
 
-  # 2. ตรวจสอบว่าตั้งค่า Alias หรือยัง (สำคัญมาก)
-  # ถ้ายังไม่ตั้ง ต้องสั่ง mc alias set ก่อน มิเช่นนั้นจะ push ของไม่ได้
-  if ! mc alias list "$MINIO_ALIAS" &> /dev/null; then
-    echo "❌ Error: MinIO alias '$MINIO_ALIAS' not found."
-    echo "💡 Please run: mc alias set $MINIO_ALIAS http://YOUR_MINIO_IP:9000 ACCESS_KEY SECRET_KEY"
-    return 1
-  fi
+  # 2. ตั้งค่าการเชื่อมต่อ (Auto-Alias)
+  # ใช้ IP และค่า Default (minioadmin) ตามที่คุณระบุว่าไม่ได้ตั้งรหัสไว้
+  local MINIO_URL="http://10.1.194.51:9000"
+  local ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
+  local SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
+
+  echo "▶ Connecting to MinIO at $MINIO_URL..."
+  # บังคับตั้งค่า Alias ใหม่เพื่อให้มั่นใจว่าข้อมูลอัปเดต
+  mc alias set "$MINIO_ALIAS" "$MINIO_URL" "$ACCESS_KEY" "$SECRET_KEY" > /dev/null
 
   # 3. เช็คไฟล์ .exe ก่อนอัปโหลด
   if [ ! -f "dist/main.exe" ]; then
@@ -99,13 +95,16 @@ upload_to_minio() {
   fi
   
   echo "▶ Uploading TAX app version $VERSION..."
+  # ส่งไฟล์ .exe ขึ้น MinIO
   mc cp dist/main.exe "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME/$VERSION/tax_app.exe"
   
-  echo "▶ Updating latest.json..."
+  echo "▶ Updating latest.json metadata..."
+  # สร้างไฟล์ metadata เพื่อให้เครื่องลูกเช็คเวอร์ชัน
   echo "{\"version\": \"$VERSION\", \"url\": \"/$BUCKET_NAME/$PROJECT_NAME/$VERSION/tax_app.exe\"}" > latest.json
   mc cp latest.json "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME/latest.json"
 
-  echo "▶ Setting Public Policy..."
+  echo "▶ Setting Public Policy for Client Access..."
+  # ตั้งค่า Public เพื่อให้เครื่องลูกดาวน์โหลดได้โดยตรง
   mc anonymous set public "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME"
 
   echo "  ✓ Upload completed successfully!"
