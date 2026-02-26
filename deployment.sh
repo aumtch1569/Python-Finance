@@ -15,7 +15,10 @@ readonly MINIO_PASS="minioadmin"
 readonly MINIO_CONTAINER="minio_artifacts"
 readonly BUCKET_NAME="deployments"
 
-readonly BUILD_IMAGE="cdrx/pyinstaller-windows"
+# ใช้ custom image แทน cdrx/pyinstaller-windows โดยตรง
+# เหตุผล: cdrx หยุด maintain → Python 3.7 + PyInstaller 3.x → ไม่มี --collect-all
+readonly BUILD_IMAGE="tax-pyinstaller-windows:latest"
+readonly BUILD_DOCKERFILE="Dockerfile.build"
 readonly PACKAGE_NAME="app_package.tar.gz"
 
 # ══════════════════════════════════════════════
@@ -38,11 +41,28 @@ success() { echo "  ✅ $*"; }
 error()   { echo "  ❌ $*" >&2; exit 1; }
 
 # ══════════════════════════════════════════════
-#  BUILD
+#  BUILD IMAGE
+# ══════════════════════════════════════════════
+ensure_build_image() {
+  section "BUILD IMAGE — $BUILD_IMAGE"
+
+  [ -f "$BUILD_DOCKERFILE" ] || error "$BUILD_DOCKERFILE not found in workspace"
+
+  # build image ใหม่ถ้ายังไม่มี หรือถ้า Dockerfile เปลี่ยน
+  if ! docker image inspect "$BUILD_IMAGE" &>/dev/null; then
+    log "Image not found — building..."
+    docker build -f "$BUILD_DOCKERFILE" -t "$BUILD_IMAGE" .
+    success "Image built: $BUILD_IMAGE"
+  else
+    log "Image already exists — skipping build"
+    log "  (ลบ image ด้วย 'docker rmi $BUILD_IMAGE' เพื่อ rebuild)"
+  fi
+}
+
+# ══════════════════════════════════════════════
+#  BUILD SCRIPT (เขียนแยกไฟล์ → ไม่มี multiline bash -c)
 # ══════════════════════════════════════════════
 write_build_script() {
-  # เขียน script แยกไฟล์ก่อน cp เข้า container
-  # เหตุผล: docker exec bash -c "multiline if/fi" → syntax error เสมอ
   cat > /tmp/_build_inside.sh << 'BUILD_SCRIPT'
 #!/bin/bash
 set -euo pipefail
@@ -67,11 +87,6 @@ echo "▶ Locating customtkinter..."
 CTK_PATH=$(python -c 'import customtkinter, os; print(os.path.dirname(customtkinter.__file__))' | tr -d '\r\n')
 echo "  customtkinter: $CTK_PATH"
 
-# ── PyInstaller ─────────────────────────────────────────────────────────────
-# cdrx/pyinstaller-windows = Wine + Windows Python → ต้องใช้ ; ไม่ใช่ :
-# --add-data ".;." ลบออก เพราะ copy source ทั้งหมดเข้า exe ทำให้หนัก
-#   และ runtime path ผิด → "Failed to execute script main"
-# แก้: ใช้ --hidden-import แทนสำหรับ module ที่ PyInstaller หาไม่เจอ
 echo "▶ Running PyInstaller..."
 pyinstaller \
   --onedir \
@@ -92,6 +107,9 @@ echo "✅ Package ready"
 BUILD_SCRIPT
 }
 
+# ══════════════════════════════════════════════
+#  BUILD & PACKAGE
+# ══════════════════════════════════════════════
 build_and_package() {
   section "BUILD — Windows Application"
   cd "$DEPLOY_DIR"
@@ -126,9 +144,6 @@ generate_latest_json() {
 JSONEOF
 }
 
-# สร้าง bucket policy JSON สำหรับ public read
-# mc anonymous set download ใน MinIO เวอร์ชันใหม่ set เป็น "custom" ไม่ใช่ "download"
-# แก้: inject policy JSON ตรงผ่าน mc anonymous set-json
 write_minio_policy() {
   cat > /tmp/_bucket_policy.json << POLICYEOF
 {
@@ -151,16 +166,13 @@ upload_to_minio() {
   generate_latest_json
   write_minio_policy
 
-  docker cp "${DIST_DIR}/${PACKAGE_NAME}"  "${MINIO_CONTAINER}:/tmp/${PACKAGE_NAME}"
-  docker cp latest.json                    "${MINIO_CONTAINER}:/tmp/latest.json"
-  docker cp /tmp/_bucket_policy.json       "${MINIO_CONTAINER}:/tmp/bucket_policy.json"
+  docker cp "${DIST_DIR}/${PACKAGE_NAME}" "${MINIO_CONTAINER}:/tmp/${PACKAGE_NAME}"
+  docker cp latest.json                   "${MINIO_CONTAINER}:/tmp/latest.json"
+  docker cp /tmp/_bucket_policy.json      "${MINIO_CONTAINER}:/tmp/bucket_policy.json"
 
   docker exec -t "$MINIO_CONTAINER" mc alias set local "http://localhost:9000" "$MINIO_USER" "$MINIO_PASS" --quiet
   docker exec -t "$MINIO_CONTAINER" mc mb --ignore-existing "local/${BUCKET_NAME}"
-
-  # ใช้ set-json แทน set download — รองรับทุก MinIO version
   docker exec -t "$MINIO_CONTAINER" mc anonymous set-json /tmp/bucket_policy.json "local/${BUCKET_NAME}"
-
   docker exec -t "$MINIO_CONTAINER" mc cp "/tmp/${PACKAGE_NAME}" "local/${UPLOAD_PATH}"
   docker exec -t "$MINIO_CONTAINER" mc cp "/tmp/latest.json"     "local/${LATEST_PATH}"
   docker exec -t "$MINIO_CONTAINER" sh -c "rm -f /tmp/${PACKAGE_NAME} /tmp/latest.json /tmp/bucket_policy.json"
@@ -180,6 +192,7 @@ main() {
   echo "║   📌  Version : $VERSION"
   echo "╚══════════════════════════════════════════╝"
 
+  ensure_build_image
   build_and_package
   upload_to_minio
 

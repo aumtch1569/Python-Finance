@@ -1,0 +1,15 @@
+# ══════════════════════════════════════════════════════════
+#  Custom Windows Build Image
+#  Base: PyInstaller Windows (Wine + Python 3.9 + latest tools)
+# ══════════════════════════════════════════════════════════
+FROM cdrx/pyinstaller-windows:python3
+
+# อัปเกรด pip + PyInstaller ให้รองรับ --collect-all และ flag ใหม่ๆ
+RUN pip install --upgrade pip pyinstaller
+
+# pre-install common packages เพื่อเร่ง build time
+RUN pip install \
+    customtkinter \
+    Pillow
+
+WORKDIR /src
