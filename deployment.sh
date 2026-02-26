@@ -64,25 +64,51 @@ build_exe() {
 ###############################################################################
 
 upload_to_minio() {
-  echo "📦 Uploading Artifacts to MinIO..."
+  echo "📦 Checking MinIO Client (mc)..."
 
-  # ตรวจสอบว่ามีคำสั่ง mc หรือไม่
+  # 1. ตรวจสอบว่ามี mc หรือยัง ถ้าไม่มีให้โหลดมาติดตั้งเอง
   if ! command -v mc &> /dev/null; then
-    echo "⚠️  mc command not found, skipping upload."
-    return
+    echo "⚠️  mc not found. Starting automatic installation..."
+    
+    # ดาวน์โหลด mc binary (สำหรับ Linux 64-bit)
+    curl https://dl.min.io/client/mc/release/linux-amd64/mc --create-dirs -o "$HOME/bin/mc"
+    
+    # ให้สิทธิ์การรัน
+    chmod +x "$HOME/bin/mc"
+    
+    # เพิ่ม path ชั่วคราวเพื่อให้เรียกใช้ได้ทันที
+    export PATH="$PATH:$HOME/bin"
+    
+    echo "  ✓ mc installed successfully at $HOME/bin/mc"
+  else
+    echo "  ✓ mc is already installed."
+  fi
+
+  # 2. ตรวจสอบว่าตั้งค่า Alias หรือยัง (สำคัญมาก)
+  # ถ้ายังไม่ตั้ง ต้องสั่ง mc alias set ก่อน มิเช่นนั้นจะ push ของไม่ได้
+  if ! mc alias list "$MINIO_ALIAS" &> /dev/null; then
+    echo "❌ Error: MinIO alias '$MINIO_ALIAS' not found."
+    echo "💡 Please run: mc alias set $MINIO_ALIAS http://YOUR_MINIO_IP:9000 ACCESS_KEY SECRET_KEY"
+    return 1
+  fi
+
+  # 3. เช็คไฟล์ .exe ก่อนอัปโหลด
+  if [ ! -f "dist/main.exe" ]; then
+    echo "❌ Error: dist/main.exe not found. Build might have failed."
+    exit 1
   fi
   
-  # 1. อัปโหลดไฟล์ EXE แยกโฟลเดอร์ตามเวอร์ชัน
+  echo "▶ Uploading TAX app version $VERSION..."
   mc cp dist/main.exe "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME/$VERSION/tax_app.exe"
   
-  # 2. อัปโหลด Metadata (latest.json) เพื่อให้เครื่องลูกเช็คเพื่อ Automation Update
+  echo "▶ Updating latest.json..."
   echo "{\"version\": \"$VERSION\", \"url\": \"/$BUCKET_NAME/$PROJECT_NAME/$VERSION/tax_app.exe\"}" > latest.json
   mc cp latest.json "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME/latest.json"
 
-  # 3. ตั้งสิทธิ์ Public เพื่อให้เครื่องลูกโหลดได้สะดวก
+  echo "▶ Setting Public Policy..."
   mc anonymous set public "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME"
 
-  echo "  ✓ Uploaded to MinIO successfully"
+  echo "  ✓ Upload completed successfully!"
 }
 
 ###############################################################################
