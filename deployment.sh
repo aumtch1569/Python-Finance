@@ -41,23 +41,23 @@ build_exe() {
     cd /src && \
     python -m pip install --upgrade pip && \
     if [ -f requirements.txt ]; then 
-        # ลบเลขเวอร์ชันออกเพื่อป้องกันปัญหาความขัดแย้งของ Library
         sed -i 's/==.*//' requirements.txt && \
         pip install -r requirements.txt; 
     fi && \
     
-    # ตรวจหา Path ของ customtkinter อัตโนมัติ (เผื่อโปรเจกต์อื่นมีใช้)
-    CTK_PATH=\$(python -c 'import customtkinter; import os; print(os.path.dirname(customtkinter.__file__))' 2>/dev/null || echo '') && \
+    # 🔍 ดึง Path และใช้ tr ลบตัวขึ้นบรรทัดใหม่ (\n) หรือช่องว่างออกให้สะอาด
+    CTK_PATH=\$(python -c 'import customtkinter; import os; print(os.path.dirname(customtkinter.__file__))' 2>/dev/null | tr -d '\r\n') && \
     
-    # Build แบบ --onedir เพื่อความเสถียรสูงสุด
-    # --add-data '.;.' คือการกวาดไฟล์ทั้งหมดใน root เข้าไป
+    echo \"Debug: CTK_PATH is [\$CTK_PATH]\" && \
+    
+    # Build แบบ --onedir โดยใช้ตัวแปรที่ Clean แล้ว
     if [ -n \"\$CTK_PATH\" ]; then
         pyinstaller --onedir --windowed --add-data \"\$CTK_PATH;customtkinter\" --add-data '.;.' main.py
     else
         pyinstaller --onedir --windowed --add-data '.;.' main.py
     fi && \
     
-    # บีบอัดไฟล์ทั้งหมดในโฟลเดอร์ dist/main เป็น ZIP
+    # บีบอัดเป็น ZIP
     cd dist && zip -r ../app_package.zip main/
   "
 
