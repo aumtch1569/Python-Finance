@@ -62,7 +62,17 @@ build_and_package() {
 
     # Upgrade pip และติดตั้ง dependencies
     python -m pip install --upgrade pip --quiet
-    [ -f requirements.txt ] && pip install -r requirements.txt --quiet
+
+    if [ -f requirements.txt ]; then
+      echo "Installing dependencies..."
+      # ลอง install ตาม pinned version ก่อน
+      # ถ้า fail (เช่น version ไม่รองรับ Python นี้) → strip pin แล้วลองใหม่
+      if ! pip install -r requirements.txt --quiet 2>/dev/null; then
+        echo "⚠ Pinned install failed — retrying with unpinned versions..."
+        sed 's/[>=<!].*//' requirements.txt | grep -v '^\s*$' > /tmp/requirements_unpinned.txt
+        pip install -r /tmp/requirements_unpinned.txt --quiet
+      fi
+    fi
 
     # หา path ของ customtkinter
     CTK_PATH=\$(python -c 'import customtkinter, os; print(os.path.dirname(customtkinter.__file__))' | tr -d '\r\n')
