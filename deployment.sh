@@ -71,30 +71,44 @@ build_exe() {
 upload_to_minio() {
   echo "📦 Checking MinIO Client (mc)..."
 
-  # ติดตั้ง mc อัตโนมัติถ้ายังไม่มี
+  # 1. ตรวจสอบและติดตั้ง mc โดยแสดงความคืบหน้า
   if ! command -v mc &> /dev/null; then
-    echo "⚠️  mc not found. Installing..."
+    echo "⚠️  mc not found. Starting installation..."
     mkdir -p "$HOME/bin"
-    curl -s https://dl.min.io/client/mc/release/linux-amd64/mc -o "$HOME/bin/mc"
+    
+    # ใช้ -L เพื่อตาม Redirect และเอา -s ออกเพื่อให้เห็น Progress Bar
+    # เพิ่ม -v หากต้องการดูรายละเอียดการเชื่อมต่อ HTTP (แต่ Progress Bar ก็เพียงพอแล้ว)
+    curl -L https://dl.min.io/client/mc/release/linux-amd64/mc -o "$HOME/bin/mc"
+    
     chmod +x "$HOME/bin/mc"
+    # มั่นใจว่า $HOME/bin อยู่ใน PATH
     export PATH="$PATH:$HOME/bin"
+    echo "  ✓ mc installed successfully at $(which mc)"
+  else
+    echo "  ✓ mc is already available at: $(which mc)"
   fi
 
-  # ตั้งค่าการเชื่อมต่อ
+  # 2. ตั้งค่าการเชื่อมต่อ (แสดง Log การตั้งค่า Alias)
   local MINIO_URL="http://10.1.194.51:9000"
   local ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
   local SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
 
   echo "▶ Connecting to MinIO at $MINIO_URL..."
-  mc alias set "$MINIO_ALIAS" "$MINIO_URL" "$ACCESS_KEY" "$SECRET_KEY" > /dev/null
+  # เอา > /dev/null ออกเพื่อให้เห็นว่าการสร้าง Alias สำเร็จหรือไม่
+  mc alias set "$MINIO_ALIAS" "$MINIO_URL" "$ACCESS_KEY" "$SECRET_KEY"
 
-  echo "▶ Uploading to folder: $VERSION"
-  # อัปโหลดไฟล์ EXE เข้าโฟลเดอร์ Tag-Timestamp
+  # 3. เช็คไฟล์ก่อนอัปโหลดเพื่อความชัวร์
+  if [ ! -f "dist/main.exe" ]; then
+    echo "❌ Error: dist/main.exe not found. Build might have failed."
+    exit 1
+  fi
+
+  echo "▶ Uploading TAX app version: $VERSION"
+  # อัปโหลดไฟล์ EXE (mc cp จะแสดง Progress Bar โดยธรรมชาติใน Jenkins)
   mc cp dist/main.exe "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME/$VERSION/tax_app.exe"
   
   echo "▶ Updating latest.json metadata..."
-  # สร้างไฟล์ metadata เพื่อให้เครื่องลูกโหลดเวอร์ชันล่าสุดเสมอ
-  # ใส่ข้อมูลเพิ่มใน JSON เพื่อให้ฝั่ง Client ตรวจสอบได้ง่าย
+  # สร้างไฟล์ metadata
   cat <<EOF > latest.json
 {
   "version": "$VERSION",
@@ -106,7 +120,8 @@ EOF
 
   mc cp latest.json "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME/latest.json"
 
-  echo "▶ Setting Public Policy..."
+  echo "▶ Setting Public Policy for: $MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME"
+  # แสดงผลการตั้งค่า Permission
   mc anonymous set public "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME"
 
   echo "  ✓ Upload completed: $VERSION"
