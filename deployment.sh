@@ -38,7 +38,7 @@ build_exe() {
 
   echo "▶ Running PyInstaller inside container..."
   # เพิ่ม --add-data ".:." เพื่อนำไฟล์และโฟลเดอร์ทั้งหมดใน root เข้าไปใน exe
-  # และลบ --windowed ออกชั่วคราวเพื่อให้เห็น Error ในหน้าจอ Console หากโปรแกรม Crash
+  # แก้ไขในส่วน docker exec ของฟังก์ชัน build_exe
   docker exec -t "${container_id}" bash -c "
     cd /src && \
     python -m pip install --upgrade pip && \
@@ -46,7 +46,7 @@ build_exe() {
       sed -i 's/==.*//' requirements.txt && \
       pip install -r requirements.txt; 
     fi && \
-    pyinstaller --onefile --add-data '.:.' main.py
+    pyinstaller --onefile --add-data '.;.' main.py
   "
 
   # ดึงไฟล์ .exe กลับมาที่เครื่อง Jenkins
