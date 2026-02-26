@@ -101,12 +101,18 @@ upload_to_minio() {
   cat <<EOF > latest.json
 {
   "version": "$VERSION",
-  "url": "/$BUCKET_NAME/$PROJECT_NAME/$VERSION/app_package.tar.gz",
+  "url": "$MINIO_URL/$BUCKET_NAME/$PROJECT_NAME/$VERSION/app_package.tar.gz",
   "filename": "app_package.tar.gz"
 }
 EOF
+
   mc cp latest.json "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME/latest.json"
-  mc anonymous set public "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME"
+
+  # 🔓 ปลดล็อกสิทธิ์ให้ทุกคนโหลดได้ (Public Access)
+  echo "▶ Setting Policy to Downloadable..."
+  mc anonymous set download "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME"
+  
+  echo "✅ Done! เครื่องอื่นสามารถโหลดผ่านลิงก์ใน latest.json ได้แล้ว"
 }
 
 main() {
