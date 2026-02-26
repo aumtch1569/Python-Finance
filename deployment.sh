@@ -36,29 +36,40 @@ build_exe() {
   echo "▶ Copying source code to container..."
   docker cp . "${container_id}:/src"
 
-  echo "▶ Running PyInstaller (Universal Mode)..."
+  echo "▶ Running Environment Setup & Build..."
   docker exec -t "${container_id}" bash -c "
     cd /src && \
+    
+    # 🔍 เช็คและติดตั้ง zip เฉพาะเมื่อจำเป็น
+    if ! command -v zip &> /dev/null; then
+        echo '📦 Installing zip...' && \
+        apt-get update && apt-get install -y zip;
+    fi && \
+    
     python -m pip install --upgrade pip && \
     if [ -f requirements.txt ]; then 
         sed -i 's/==.*//' requirements.txt && \
         pip install -r requirements.txt; 
     fi && \
     
-    # 🔍 ดึง Path และใช้ tr ลบตัวขึ้นบรรทัดใหม่ (\n) หรือช่องว่างออกให้สะอาด
+    # 🔍 ดึง Path และล้าง Newline ให้สะอาด
     CTK_PATH=\$(python -c 'import customtkinter; import os; print(os.path.dirname(customtkinter.__file__))' 2>/dev/null | tr -d '\r\n') && \
     
     echo \"Debug: CTK_PATH is [\$CTK_PATH]\" && \
     
-    # Build แบบ --onedir โดยใช้ตัวแปรที่ Clean แล้ว
+    # Build แบบ --onedir
     if [ -n \"\$CTK_PATH\" ]; then
         pyinstaller --onedir --windowed --add-data \"\$CTK_PATH;customtkinter\" --add-data '.;.' main.py
     else
         pyinstaller --onedir --windowed --add-data '.;.' main.py
     fi && \
     
-    # บีบอัดเป็น ZIP
-    cd dist && zip -r ../app_package.zip main/
+    # บีบอัดไฟล์ทั้งหมดในโฟลเดอร์ผลลัพธ์ (กวาดทุกอย่างใน dist/main)
+    if [ -d \"dist/main\" ]; then
+        cd dist/main && zip -r ../../app_package.zip *
+    else
+        echo '❌ Error: Build directory not found!' && exit 1
+    fi
   "
 
   # ดึงไฟล์ Zip กลับมาที่ Jenkins
@@ -82,7 +93,6 @@ build_exe() {
 upload_to_minio() {
   echo "📦 Checking MinIO Client (mc)..."
 
-  # ติดตั้ง mc อัตโนมัติ
   if ! command -v mc &> /dev/null; then
     mkdir -p "$HOME/bin"
     curl -L https://dl.min.io/client/mc/release/linux-amd64/mc -o "$HOME/bin/mc"
@@ -98,11 +108,9 @@ upload_to_minio() {
   mc alias set "$MINIO_ALIAS" "$MINIO_URL" "$ACCESS_KEY" "$SECRET_KEY"
 
   echo "▶ Uploading Package: $VERSION"
-  # อัปโหลดไฟล์ Zip
   mc cp dist_final/app_package.zip "$MINIO_ALIAS/$BUCKET_NAME/$PROJECT_NAME/$VERSION/app_package.zip"
   
   echo "▶ Updating latest.json..."
-  # สร้างไฟล์ metadata ชี้ไปที่ Zip
   cat <<EOF > latest.json
 {
   "version": "$VERSION",
