@@ -91,7 +91,7 @@ class FinanceApp(ctk.CTk):
         header.pack(fill="x", side="top")
 
         # ✅ ลบ emoji 💹 ออก → Tcl บน Windows ไม่รองรับ Unicode นอก BMP (U+0000-U+FFFF)
-        ctk.CTkLabel(header, text="Finance Calculator Pro",
+        ctk.CTkLabel(header, text="Finance Calculator 17 Pro Max 256GB",
                      font=FONT_TITLE, text_color=COLORS["text"]).pack(side="left", padx=20, pady=10)
         ctk.CTkLabel(header, text="Compound & Simple Interest Analyzer",
                      font=FONT_SMALL, text_color=COLORS["subtext"]).pack(side="right", padx=20)
