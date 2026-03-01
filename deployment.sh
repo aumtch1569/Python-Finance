@@ -8,7 +8,7 @@ readonly PROJECT_NAME="TAX"
 readonly DEPLOY_DIR="${WORKSPACE:-$(pwd)}"
 readonly DIST_DIR="dist_final"
 
-readonly MINIO_HOST="10.1.194.51"
+readonly MINIO_HOST="192.168.0.30"
 readonly MINIO_PORT="9000"
 readonly MINIO_USER="minioadmin"
 readonly MINIO_PASS="minioadmin"
